@@ -18,7 +18,7 @@ function App() {
         <Route path="/" element={<IntroPage />} />
         <Route path="/Register" element={<Register />} />   {/* Fixed */}
         <Route path="/Login" element={<Login />} />
-        <Route path="/chat" element={<Chat />} />  // use uppercase when rendering component
+        <Route path="/chat" element={<Chat />} />  
         <Route path="/home" element={<Home />} />
         <Route path="/editor/:roomId" element={<EditorPage />} />
       </Routes>

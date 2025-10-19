@@ -18,6 +18,14 @@ General Reset
   animation: fadeIn 1s ease-in-out, colorChange 5s infinite alternate; /* Add fade-in and color change animation */
 }
 
+
+.language-icon {
+  color: green;          /* Makes the label text green */
+  margin-left: 2px;
+ 
+}
+
+
 /* Fade-in Animation */
 @keyframes fadeIn {
   from {

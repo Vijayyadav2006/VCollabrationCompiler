@@ -1,97 +1,174 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import Client from "./Client";
+import { connectWs } from "./wes";
+import { toast } from "react-hot-toast";
 
-export default function Chat({ socket, firstName, roomId }) {
+
+export default function Chat({ username, roomId }) {
   const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
-  const [typingUser, setTypingUser] = useState("");
+  const [messageInput, setMessageInput] = useState("");
+  const [typers, setTypers] = useState([]); // users typing
+  const socket = useRef(null);
+  const typingTimer = useRef(null);
 
+  // Connect socket and handle events
   useEffect(() => {
-    if (!socket) return;
+    socket.current = connectWs();
 
-    // Listen for incoming messages
-    socket.on("chat-message", (msg) => {
-      setMessages((prev) => [...prev, msg]);
+    socket.current.on("connect", () => {
+      console.log("Connected to server");
+      socket.current.emit("joinRoom", { username, roomId });
     });
 
-    // Listen for typing
-    socket.on("user-typing", (user) => {
-      if (user !== firstName) {
-        setTypingUser(user);
-        setTimeout(() => setTypingUser(""), 2000);
-      }
+    // User joined
+socket.current.on("user-joined", (user) => {
+  // Add to chat messages
+  setMessages((prev) => [
+    ...prev,
+    { username: user, message: `${user} joined the room`, system: true },
+  ]);
+
+  // Show toast
+  toast.success(`${user} joined the room`);
+});
+
+// User left
+socket.current.on("user-left", (user) => {
+  setMessages((prev) => [
+    ...prev,
+    { username: user, message: `${user} left the room`, system: true },
+  ]);
+
+  toast.success(`${user} left the room`);
+});
+
+
+    // Incoming messages
+    socket.current.on("receive-message", (messageObj) => {
+      setMessages((prev) => [...prev, messageObj]);
     });
 
+    // Typing events
+    socket.current.on("typing", (user) => {
+      setTypers((prev) => (prev.includes(user) ? prev : [...prev, user]));
+    });
+
+    socket.current.on("stopTyping", (user) => {
+      setTypers((prev) => prev.filter((u) => u !== user));
+    });
+
+    // Cleanup
     return () => {
-      socket.off("chat-message");
-      socket.off("user-typing");
+      if (socket.current) {
+        socket.current.off("connect");
+        socket.current.off("user-joined");
+        socket.current.off("user-left");
+        socket.current.off("receive-message");
+        socket.current.off("typing");
+          socket.current.off("stopTyping");
+        socket.current.disconnect();
+      }
     };
-  }, [socket, firstName]);
+  }, [username, roomId]);
+
+  // Typing indicator emit
+  useEffect(() => {
+    if (!socket.current) return;
+
+    if (messageInput.trim()) {
+      socket.current.emit("typing", username);
+      clearTimeout(typingTimer.current);
+      typingTimer.current = setTimeout(() => {
+        socket.current.emit("stopTyping", username);
+      }, 1000);
+    } else {
+      socket.current.emit("stopTyping", username);
+    }
+
+    return () => clearTimeout(typingTimer.current);
+  }, [messageInput, username]);
 
   const sendMessage = (e) => {
     e.preventDefault();
-    if (!input) return;
+    if (!messageInput.trim()) return;
 
-    const msgObj = { user: firstName, text: input };
-    socket.emit("chat-message", { roomId, ...msgObj });
-    setMessages((prev) => [...prev, msgObj]);
-    setInput("");
-  };
+    const now = new Date();
+    const timeString = now.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 
-  const handleTyping = () => {
-    socket.emit("user-typing", { roomId, firstName });
+    const messageObj = {
+      username,
+      message: messageInput,
+      time: timeString,
+      roomId,
+    };
+
+    if (socket.current) {
+      socket.current.emit("send-message", messageObj);
+      socket.current.emit("stopTyping", username);
+    }
+
+    setMessages((prev) => [...prev, messageObj]);
+    setMessageInput("");
   };
 
   return (
-    <div style={{ padding: "1rem", height: "100%", backgroundColor: "#f5f5f5" }}>
-      <ul style={{ listStyle: "none", padding: 0, overflowY: "auto", maxHeight: "70%" }}>
-        {messages.map((msg, idx) => (
-          <li
-            key={idx}
-            style={{
-              padding: "0.5rem 1rem",
-              background:
-                msg.user === "System"
-                  ? "#ffeeba"
-                  : idx % 2 === 0
-                  ? "#efefef"
-                  : "#ddd",
-              borderRadius: "5px",
-              margin: "0.2rem 0",
-            }}
+    <div className="chat-container d-flex flex-column h-100">
+      {/* Header */}
+      <div className="chat-header p-2 border-bottom bg-light">
+        <strong>
+          Room: {roomId} | Chatting as: {username}
+        </strong>
+
+        
+      </div>
+
+      {/* Messages */}
+      <div className="chat-messages flex-grow-1 overflow-auto p-3 d-flex flex-column">
+        {messages.length === 0 && (
+          <div className="text-muted text-center mt-3">No messages yet</div>
+        )}
+
+        {messages.map((msg, i) => (
+          <div
+            key={i}
+            className={`mb-2 ${msg.system ? "text-muted fst-italic" : ""}`}
           >
-            {msg.user !== "System" && <strong>{msg.user}: </strong>}
-            {msg.text}
-          </li>
+            {!msg.system && <Client username={msg.username} />}
+            <div className="ms-5 d-flex justify-content-between">
+              <span>{msg.message}</span>
+              {msg.time && <small className="text-muted ms-2">{msg.time}</small>}
+            </div>
+          </div>
         ))}
-      </ul>
 
-      {typingUser && (
-        <div style={{ fontStyle: "italic", margin: "0.5rem 0" }}>
-          {typingUser} is typing...
-        </div>
-      )}
+        {/* Typing indicator BELOW messages */}
+        {typers.length > 0 && (
+          <div className="mt-auto text-sm text-gray-500 fst-italic">
+            {typers
+              .filter((user) => user !== username)
+              .join(", ")}{" "}
+            {typers.filter((u) => u !== username).length > 1 ? "are" : "is"} typing...
+          </div>
+        )}
+      </div>
 
-      <form onSubmit={sendMessage} style={{ display: "flex", marginTop: "1rem" }}>
+      {/* Input */}
+      <form
+        className="chat-input d-flex mt-2 p-2 border-top bg-white"
+        style={{ gap: "5px" }}
+        onSubmit={sendMessage}
+      >
         <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleTyping}
+          type="text"
+          className="form-control"
           placeholder="Type a message..."
-          style={{
-            flexGrow: 1,
-            padding: "0.5rem 1rem",
-            borderRadius: "20px",
-            border: "1px solid #ccc",
-          }}
+          value={messageInput}
+          onChange={(e) => setMessageInput(e.target.value)}
         />
-        <button
-          type="submit"
-          style={{
-            marginLeft: "0.5rem",
-            padding: "0.5rem 1rem",
-            borderRadius: "5px",
-          }}
-        >
+        <button className="btn btn-primary" type="submit">
           Send
         </button>
       </form>

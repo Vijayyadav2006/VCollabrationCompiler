@@ -227,9 +227,8 @@ const Login = () => {
 
           <div className="links">
             <p>{isSignUp ? "Already have an account?" : "Don't have an account yet?"}</p>
-            <button onClick={() => setIsSignUp(!isSignUp)}>
-              {isSignUp ? "Sign In" : "Sign Up"}
-            </button>
+           <button onClick={() => navigate("/register")}>Sign Up</button>
+
           </div>
 
           {message && <div className="alert alert-info">{message}</div>}
